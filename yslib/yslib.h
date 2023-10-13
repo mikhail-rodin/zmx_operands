@@ -5,7 +5,7 @@
 #include <math.h>
 /*
 +-------------------------------------+
-|  Yuan-Seidel aberration lib  v.0.0  |
+|  Yuan-Seidel aberration lib  v.0.1  |
 +-------------------------------------+
 Calculates parallel- and cross-cylinder anamorphic lens' third-order aberrations
 based on Sheng Yuan's PhD thesis.
@@ -13,12 +13,6 @@ based on Sheng Yuan's PhD thesis.
 Units.
 All angles, both output by subroutines and supplied in args, are in radians.
 All distances in millimeters.
-
-Sign convention.
-A continental sign convention is used, specifically Soviet one as described by Slyusarev.
-Positive ray slopes (angles) correspond to positive object-space heights, i.e.:
-a right triangle cathetes are axis and positive-height object, then apex (pupil centre in this case)
-has a positive angle (ray slope).
 
 System variable names.
 A mix of Kingslake's and Rusinov's symbols is used.
@@ -64,6 +58,7 @@ namespace YS {
 		SVec<T, N>&     operator+= (const SVec& rhs);
 		SVec<T, N>      operator+ (const SVec& rhs) const;
 		SVec<T, N>&     operator*= (const SVec& rhs);
+		SVec<T, N>&     operator*= (const T mul);
 		SVec<T, N>&     operator* (const SVec& rhs) const;
 		operator double* () { return elts; }; // cast to C array operator
 	};
@@ -115,9 +110,11 @@ namespace YS {
 		) {
 		RayParax ray_;
 		// 1. refraction
-		ray_.u = ray.u * n12 - ray.h * c * (1 - n12);
+		ray_.u = ray.u * n12 - ray.h * c * (1 - n12); // Stavroudis
+		//ray_.u = ray.u * n12 + ray.h * c * (1 - n12); // Slyusarev
 		// 2. transfer
-		ray_.h = ray.h + ray_.u * d;
+		ray_.h = ray.h + ray_.u * d; // Stavroudis
+		//ray_.h = ray.h - ray_.u * d; // Slyusarev
 		return ray_;
 	}
 
@@ -147,6 +144,11 @@ namespace YS {
 	{
 		for (size_t i = 0; i < N; ++i) elts[i] *= rhs[i];
 		return *this;
+	}
+	template<typename T, size_t N>
+	inline SVec<T, N>& SVec<T, N>::operator*=(const T mul)
+	{
+		for (size_t i = 0; i < N; ++i) elts[i] *= mul;
 	}
 	template<typename T, size_t N>
 	inline SVec<T, N>& SVec<T, N>::operator*(const SVec& rhs) const

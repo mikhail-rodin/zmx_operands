@@ -27,6 +27,7 @@
   <ItemGroup>
     <ClInclude Include="..\build\generated\zosapi.h" />
     <ClInclude Include="..\build\generated\zosapi_dev.h" />
+    <ClInclude Include="..\catahash.h" />
     <ClInclude Include="..\yslib\yslib.h" />
     <ClInclude Include="..\zosutils\dbg.h" />
     <ClInclude Include="..\zosutils\zos.h" />

@@ -50,5 +50,8 @@
     <ClInclude Include="..\build\generated\zosapi_dev.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\catahash.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

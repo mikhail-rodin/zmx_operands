@@ -1,4 +1,7 @@
 #include "zos.h"
+extern "C" {
+#include "..\build\generated\catahash.h"
+}
 
 using namespace zmx;
 
@@ -66,4 +69,58 @@ zmx::RunOperand(p_operandfunc_t OpFunc)
 			&operand_results[0]);
 	}
 	return errcode;
+}
+
+zmx::Glass::Glass(const _bstr_t name)
+{
+	if (name.length() == 0)
+	{
+		m_n = 1.0; m_v = 89.3; //air
+	}
+	else {
+		const glasscat_record_t* const pGlass = get_pGlass(name, name.length());
+		if (0 == pGlass) throw ERR_CATAHASH;
+		m_n = static_cast<zmxfloat_t>(pGlass->n);
+		m_v = static_cast<zmxfloat_t>(pGlass->v);
+	}
+}
+
+zmx::SurfType
+zmx::ClassifySurf(ZOSAPI_Interfaces::ILDERowPtr pSurf)
+{
+	ZOSAPI_Interfaces::ISurfaceToroidalPtr pSurfData = pSurf->SurfaceData;
+	const double r = pSurf->Radius;
+	// zemax uses inf to represent flat Y radiuses
+	// which relies on compiler- and architecture-dependent UB
+	// NB! radiuses are inconsistent in ZOS2023: see rX below
+	switch (pSurf->type)
+	{
+	case ZOSAPI_Interfaces::SurfaceType_Standard:
+		return zmx::SPH;
+		break;
+	case ZOSAPI_Interfaces::SurfaceType_Toroidal:
+	{//a local scope for the vars below
+		const double rx = pSurfData->RadiusOfRotation;
+		// rX, unlike rY, is flat at r=0!
+		const bool Y_FLAT = (FP_INFINITE == std::fpclassify(r));
+		const bool X_FLAT = (FP_ZERO == std::fpclassify(rx));
+		if (X_FLAT && !Y_FLAT) {
+			return zmx::CYL_Y;
+		}
+		else if (!X_FLAT && Y_FLAT) {
+			return zmx::CYL_X;
+		}
+		else if (X_FLAT && Y_FLAT) {
+			const bool Y_VAR = (ZOSAPI_Interfaces::SolveType_Variable == pSurf->RadiusCell->Solve);
+			return Y_VAR ? zmx::CYL_Y : zmx::CYL_X;
+		}
+		else {
+			return zmx::TOROIDAL;
+		}
+		break;
+	}
+	default:
+		return zmx::UNKNOWN;
+		break;
+	}
 }

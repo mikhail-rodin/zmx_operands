@@ -13,11 +13,11 @@ YS::ParaxObject(Pupil X, Pupil Y)
 	obj.YM.h = .5 * Y.D; obj.YM.u = 0;
 
 	// principal rays depend on entrance pupil position
-	obj.XP.u = tan(X.half_field);
-	obj.YP.u = tan(Y.half_field);
+	obj.XP.u = tan(abs(X.half_field));
+	obj.YP.u = tan(abs(Y.half_field));
 
 	obj.XP.h = -X.s * obj.XP.u;
-	obj.YP.h = -X.s * obj.YP.u;
+	obj.YP.h = -Y.s * obj.YP.u;
 
 	return obj;
 }
@@ -67,8 +67,8 @@ YS::YuanCoeffsInplace(OSSurfaceXY& s, const OSSurfaceXY& s_)
 	// refraction angle finite differences
 	f_parax_t delta_uXM_n = s_.rt.XM.u / s_.n - s.rt.XM.u / s.n;
 	f_parax_t delta_uYM_n = s_.rt.YM.u / s_.n - s.rt.YM.u / s.n;
-	f_parax_t delta_cX_n = s_.cx / s_.n - s.cx / s.n; // P_x in Yuan's PhD
-	f_parax_t delta_cY_n = s_.cy / s_.n - s.cy / s.n; // P_y per Yuan
+	f_parax_t delta_cX_n = s.cx * (1 / s_.n - 1 / s.n); // P_x in Yuan's PhD
+	f_parax_t delta_cY_n = s.cy * (1 / s_.n - 1 / s.n); // P_y per Yuan
 	f_parax_t delta_1_n2 = 1.0/(s_.n * s_.n) - 1.0/(s.n * s.n);
 
 	// Seidel spherical = -1/8*S1
@@ -86,10 +86,12 @@ YS::YuanCoeffsInplace(OSSurfaceXY& s, const OSSurfaceXY& s_)
 		+ Linv_Y * Linv_Y * delta_cY_n);
 
 	// Seidel distortion = -1/2*S5
+	// Yuan's thesis has a typo here: signs are wrong.
+	// See Sasian's Aberrations 2013 p.139 for the correct S5 formula
 	s.D[13] = -.5 * (Ainv_XP * Ainv_XP * Ainv_XP * s.rt.XM.h * delta_1_n2
-		+ Ainv_XP * s.rt.XP.h * (Linv_X - Ainv_XP * s.rt.XM.h) * delta_cX_n);
+		- Ainv_XP * s.rt.XP.h * (Linv_X + Ainv_XP * s.rt.XM.h) * delta_cX_n);
 	s.D[14] = -.5 * (Ainv_YP * Ainv_YP * Ainv_YP * s.rt.YM.h * delta_1_n2
-		+ Ainv_YP * s.rt.YP.h * (Linv_Y - Ainv_YP * s.rt.YM.h) * delta_cY_n);
+		- Ainv_YP * s.rt.YP.h * (Linv_Y + Ainv_YP * s.rt.YM.h) * delta_cY_n);
 
 	// Skew ray aberrations
 	s.D[3] = -.25 * Ainv_YM * (

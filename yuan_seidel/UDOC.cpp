@@ -10,16 +10,13 @@
 #define _USE_MATH_DEFINES
 #include <cmath>
 
-#define NOMINMAX // so that win32 doesn't pollute the global namespace with its min&max macros
-#include <comutil.h>
+#include "..\zosutils\zos.h"
+#include "..\yslib\yslib.h"
+#include "..\zosutils\dbg.h"
 
-#include "../zosutils/zos.h"
-#include "../yslib/yslib.h"
-#include "../zosutils/dbg.h"
-
-extern "C" {
-	#include "../catahash.h"
-}
+//extern "C" {
+//#include "../catahash.h"
+//}
 
 using namespace ZOSAPI;
 using namespace ZOSAPI_Interfaces;
@@ -28,8 +25,8 @@ inline double DegToRad(double deg) { return deg * M_PI / 180.0; }
 
 int Operand(
 	std::vector<zmx::zmxfloat_t>& operand_results, 
-	std::array<zmx::zmxfloat_t, 4> args,
-	IOpticalSystemPtr pOS
+	const std::array<zmx::zmxfloat_t, 4> args,
+	const IOpticalSystemPtr pOS
 )
 {
 	ILensDataEditorPtr pLDE = pOS->LDE;
@@ -39,14 +36,13 @@ int Operand(
 	const int i_primary_wave = zmx::PrimaryWave(pSysData->Wavelengths);
 	const int n_surfs = pLDE->NumberOfSurfaces;
 	std::vector<YS::OSSurfaceXY> parax_surfs(n_surfs-1); // preallocating for all surfs except stop
-
+	
 	DBG("Entered, " << n_surfs << " surfaces, parax_surfs[" << parax_surfs.size() << "]");
 
 	zmx::FirstOrder Y_first;
 	pLDE->GetFirstOrderData(
 		&Y_first.f_, &Y_first.FNo_parax, &Y_first.FNo_real, &Y_first.H_, &Y_first.V_parax);
-	const double X_f_ = pMFE->GetOperandValue(MeritOperandType_EFLX, 0, 0, 0, 0, 0, 0, 0, 0);
-	
+
 	YS::Pupil X_pupil, Y_pupil;
 
 	bool astigmatic_surfs_encountered = false;
@@ -105,12 +101,19 @@ int Operand(
 			}
 			parax_surf.d = static_cast<YS::f_parax_t>(pSurf->Thickness);
 			const _bstr_t glassname = pSurf->Material;
-			if (glassname.length() == 0)
+			/*if (glassname.length() == 0)
 			{
 				n_ = 1; //air
 			} else {
-				const glasscat_record_t* const pGlass = get_pGlass(glassname, glassname.length());
+				const glasscat_record_t* pGlass = get_pGlass(glassname, glassname.length());
 				n_ = static_cast<YS::f_parax_t>(pGlass->n);
+			}*/
+			try {
+				zmx::Glass gls(glassname);
+				n_ = gls.n();
+			}
+			catch (zmx::ErrCode code) {
+				return code;
 			}
 			parax_surf.n = n;
 			n = n_;
@@ -125,13 +128,13 @@ int Operand(
 	auto max_field = zmx::MaxField(pSysData->Fields);
 	X_pupil.half_field = DegToRad(max_field.x);
 	Y_pupil.half_field = DegToRad(max_field.y);
-	DBG("X pupil: D = " << X_pupil.D << ", w = " << X_pupil.half_field);
-	DBG("Y pupil: D = " << Y_pupil.D << ", w = " << Y_pupil.half_field);
+	DBG("X pupil: D = " << X_pupil.D << ", w = " << X_pupil.half_field << ", sP = " << X_pupil.s);
+	DBG("Y pupil: D = " << Y_pupil.D << ", w = " << Y_pupil.half_field << ", sP = " << Y_pupil.s);
 
 	parax_surfs[0].rt = YS::ParaxObject(X_pupil, Y_pupil);
-	DBG("uX = " << parax_surfs[0].rt.YP.u << ", h = " << parax_surfs[0].rt.YP.h);
+	DBG("uY = " << parax_surfs[0].rt.YP.u << ", h = " << parax_surfs[0].rt.YP.h);
 	YS::CylParaxTraceInplace(parax_surfs); 
-	DBG("uX = " << parax_surfs[1].rt.YP.u << ", h = " << parax_surfs[1].rt.YP.h);
+	DBG("uY = " << parax_surfs[1].rt.YP.u << ", h = " << parax_surfs[1].rt.YP.h);
 	// now the rnd table is filled with raytrace data for all 4 paraxial rays
 
 	YS::D_vec_t YS_sum = {};
@@ -175,43 +178,4 @@ int APIENTRY _tWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPTSTR lpCm
 int _tmain(int argc, _TCHAR* argv[])
 {
 	return zmx::RunOperand(Operand);
-}
-
-YS::SurfType
-classify_zmx_surf(ILDERowPtr pSurf)
-{
-	double r = pSurf->Radius;
-	// zemax uses inf to represent flat Y radiuses
-	// which relies on compiler- and architecture-dependent UB
-	// NB! radiuses are inconsistent in ZOS2023: see rX below
-	switch (pSurf->type)
-	{
-	case SurfaceType_Standard:
-		return YS::SPHERICAL;
-		break;
-	case SurfaceType_Toroidal:
-		ISurfaceToroidalPtr pSurfData = pSurf->SurfaceData;
-		const double rx = pSurfData->RadiusOfRotation;
-		// rX, unlike rY, is flat at r=0!
-		const bool Y_FLAT = (FP_INFINITE == std::fpclassify(r));
-		const bool X_FLAT = (FP_ZERO == std::fpclassify(rx));
-		DBG("rx = " << rx << ", ry = " << r << Dbg::endl);
-		if (X_FLAT && !Y_FLAT) {
-			return YS::CYL_Y;
-		}
-		else if (!X_FLAT && Y_FLAT) {
-			return YS::CYL_X;
-		}
-		else if (X_FLAT && Y_FLAT) {
-			const bool Y_VAR = (SolveType_Variable == pSurf->RadiusCell->Solve);
-			return Y_VAR ? YS::CYL_Y : YS::CYL_X;
-		}
-		else {
-			return YS::TOROIDAL;
-		}
-		break;
-	//default:
-	//	return YS::UNKNOWN;
-	//	break;
-	}
 }
